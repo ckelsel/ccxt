@@ -7,7 +7,7 @@ ADD ./ /ccxt
 WORKDIR /ccxt
 
 # Update packages (use us.archive.ubuntu.com instead of archive.ubuntu.com — solves the painfully slow apt-get update)
-RUN sed -i 's/archive\.ubuntu\.com/us\.archive\.ubuntu\.com/' /etc/apt/sources.list
+RUN sed -i 's/archive\.ubuntu\.com/mirrors\.aliyun\.com/' /etc/apt/sources.list
 
 # Miscellaneous deps
 RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg git ca-certificates
@@ -19,6 +19,10 @@ RUN curl -sL https://deb.nodesource.com/setup_16.x | bash -
 RUN apt-get update && apt-get install -y nodejs
 # Python 3
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip
+
+# Set douban source
+RUN pip3 config set global.index-url https://pypi.doubanio.com/simple/
+
 RUN pip3 install 'idna==2.9' --force-reinstall
 RUN pip3 install --upgrade setuptools==65.7.0
 RUN pip3 install tox
@@ -33,11 +37,10 @@ RUN cd python \
     && python3 setup.py develop \
     && cd ..
 ## Install composer and everything else that it needs and manages
-RUN /ccxt/composer-install.sh
-RUN apt-get update && apt-get install -y --no-install-recommends zip unzip php-zip
-RUN mv /ccxt/composer.phar /usr/local/bin/composer
-RUN composer install
+# RUN /ccxt/composer-install.sh
+# RUN apt-get update && apt-get install -y --no-install-recommends zip unzip php-zip
+# RUN mv /ccxt/composer.phar /usr/local/bin/composer
+# RUN composer install
 ## Remove apt sources
 RUN apt-get -y autoremove && apt-get clean && apt-get autoclean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
