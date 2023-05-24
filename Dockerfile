@@ -36,11 +36,11 @@ RUN echo "export NODE_PATH=/usr/lib/node_modules" >> $HOME/.bashrc
 RUN cd python \
     && python3 setup.py develop \
     && cd ..
-## Install composer and everything else that it needs and manages
-# RUN /ccxt/composer-install.sh
-# RUN apt-get update && apt-get install -y --no-install-recommends zip unzip php-zip
-# RUN mv /ccxt/composer.phar /usr/local/bin/composer
-# RUN composer install
-## Remove apt sources
+# Install composer and everything else that it needs and manages
+RUN /ccxt/composer-install.sh
+RUN apt-get update && apt-get install -y --no-install-recommends zip unzip php-zip
+RUN mv /ccxt/composer.phar /usr/local/bin/composer
+RUN composer install
+# Remove apt sources
 RUN apt-get -y autoremove && apt-get clean && apt-get autoclean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
