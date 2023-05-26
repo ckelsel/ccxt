@@ -46,6 +46,7 @@ const version = '3.0.85';
 
 //-----------------------------------------------------------------------------
 
+import a from  './src/a.js'
 import ace from  './src/ace.js'
 import alpaca from  './src/alpaca.js'
 import ascendex from  './src/ascendex.js'
@@ -213,6 +214,7 @@ import whitebitPro from  './src/pro/whitebit.js'
 import wooPro from  './src/pro/woo.js'
 
 const exchanges = {
+    'a':                      a,
     'ace':                    ace,
     'alpaca':                 alpaca,
     'ascendex':               ascendex,
@@ -451,6 +453,7 @@ export {
     PartialBalances,
     Dictionary,
     MinMax,
+    a,
     ace,
     alpaca,
     ascendex,

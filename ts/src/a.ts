@@ -1,10 +1,9 @@
-
 // ---------------------------------------------------------------------------
 
-import Exchange from './abstract/alpaca.js';
-import { ExchangeError, BadRequest, PermissionDenied, BadSymbol, NotSupported, InsufficientFunds, InvalidOrder } from './base/errors.js';
-import { TICK_SIZE } from './base/functions/number.js';
-import { Int, OrderSide } from './base/types.js';
+import Exchange from './abstract/a.js';
+import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
+import { Int } from './base/types.js';
+
 // ---------------------------------------------------------------------------
 
 export default class a extends Exchange {
@@ -109,6 +108,27 @@ export default class a extends Exchange {
                 'setPositionMode': false,
                 'transfer': false,
             },
+            'api': {
+                'public': {
+                    'get': [
+                        'oapi/v2/list/tradePrice',
+                        'oapi/v2/list/marketPair',
+                        'oapi/v2/public/getOrderBook',
+                        'oapi/v2/kline/getKline',
+                    ],
+                },
+                'private': {
+                    'post': [
+                        'v2/coin/customerAccount',
+                        'v2/order/order',
+                        'v2/order/cancel',
+                        'v2/order/getOrderList',
+                        'v2/order/showOrderStatus',
+                        'v2/order/showOrderHistory',
+                        'v2/order/getTradeList',
+                    ],
+                },
+            },
             'fees': {
                 'trading': {
                     'feeSide': 'get',
@@ -121,204 +141,218 @@ export default class a extends Exchange {
         });
     }
 
+    parseOHLCV (ohlcv, market = undefined) {
+        //
+        //     {
+        //         "volume": 0,
+        //         "closePrice": 101000.0,
+        //         "lowPrice": 101000.0,
+        //         "highPrice": 101000.0,
+        //         "openPrice": 101000.0,
+        //         "createTime": "2019-11-08 14:49:00"
+        //     }
+        //
+        const dateTime = this.safeString (ohlcv, 'createTime');
+        let timestamp = this.parse8601 (dateTime);
+        if (timestamp !== undefined) {
+            timestamp = timestamp - 28800000; // 8 hours
+        }
+        return [
+            timestamp,
+            this.safeNumber (ohlcv, 'openPrice'),
+            this.safeNumber (ohlcv, 'highPrice'),
+            this.safeNumber (ohlcv, 'lowPrice'),
+            this.safeNumber (ohlcv, 'closePrice'),
+            this.safeNumber (ohlcv, 'volume'),
+        ];
+    }
+
     async fetchOHLCV (symbol: string, timeframe = '1m', since: Int = undefined, limit: Int = undefined, params = {}) {
-        return undefined;
+        /**
+         * @method
+         * @name ace#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @see https://github.com/ace-exchange/ace-official-api-docs/blob/master/api_v2.md#open-api---klinecandlestick-data
+         * @param {string} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {string} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {object} params extra parameters specific to the ace api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'duration': this.timeframes[timeframe],
+            'quoteCurrencyId': market['quoteId'],
+            'baseCurrencyId': market['baseId'],
+        };
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        if (since !== undefined) {
+            request['startTime'] = since;
+        }
+        const response = await this.publicGetOapiV2KlineGetKline (this.extend (request, params));
+        const data = this.safeValue (response, 'attachment', []);
+        //
+        //     {
+        //         "attachment":[
+        //                 {
+        //                     "changeRate": 0,
+        //                     "closePrice": 101000.0,
+        //                     "volume": 0,
+        //                     "lowPrice": 101000.0,
+        //                     "highPrice": 101000.0,
+        //                     "highPrice": 1573195740000L,
+        //                     "openPrice": 101000.0,
+        //                     "current": 101000.0,
+        //                     "currentTime": "2019-11-08 14:49:00",
+        //                     "createTime": "2019-11-08 14:49:00"
+        //                 }
+        //         ]
+        //     }
+        //
+        return this.parseOHLCVs (data, market, timeframe, since, limit);
     }
 
     async fetchMarkets (params = {}) {
-        // /**
-        //  * @method
-        //  * @name ascendex#fetchMarkets
-        //  * @description retrieves data on all markets for ascendex
-        //  * @param {object} params extra parameters specific to the exchange api endpoint
-        //  * @returns {[object]} an array of objects representing market data
-        //  */
-        // const products = await this.v1PublicGetProducts (params);
-        // //
-        // //     {
-        // //         "code": 0,
-        // //         "data": [
-        // //             {
-        // //                 "symbol": "LBA/BTC",
-        // //                 "baseAsset": "LBA",
-        // //                 "quoteAsset": "BTC",
-        // //                 "status": "Normal",
-        // //                 "minNotional": "0.000625",
-        // //                 "maxNotional": "6.25",
-        // //                 "marginTradable": false,
-        // //                 "commissionType": "Quote",
-        // //                 "commissionReserveRate": "0.001",
-        // //                 "tickSize": "0.000000001",
-        // //                 "lotSize": "1"
-        // //             },
-        // //         ]
-        // //     }
-        // //
-        // const cash = await this.v1PublicGetCashProducts (params);
-        // //
-        // //     {
-        // //         "code": 0,
-        // //         "data": [
-        // //             {
-        // //                 "symbol": "QTUM/BTC",
-        // //                 "displayName": "QTUM/BTC",
-        // //                 "domain": "BTC",
-        // //                 "tradingStartTime": 1569506400000,
-        // //                 "collapseDecimals": "0.0001,0.000001,0.00000001",
-        // //                 "minQty": "0.000000001",
-        // //                 "maxQty": "1000000000",
-        // //                 "minNotional": "0.000625",
-        // //                 "maxNotional": "12.5",
-        // //                 "statusCode": "Normal",
-        // //                 "statusMessage": "",
-        // //                 "tickSize": "0.00000001",
-        // //                 "useTick": false,
-        // //                 "lotSize": "0.1",
-        // //                 "useLot": false,
-        // //                 "commissionType": "Quote",
-        // //                 "commissionReserveRate": "0.001",
-        // //                 "qtyScale": 1,
-        // //                 "priceScale": 8,
-        // //                 "notionalScale": 4
-        // //             }
-        // //         ]
-        // //     }
-        // //
-        // const perpetuals = await this.v2PublicGetFuturesContract (params);
-        // //
-        // //    {
-        // //        "code": 0,
-        // //        "data": [
-        // //            {
-        // //                "symbol": "BTC-PERP",
-        // //                "status": "Normal",
-        // //                "displayName": "BTCUSDT",
-        // //                "settlementAsset": "USDT",
-        // //                "underlying": "BTC/USDT",
-        // //                "tradingStartTime": 1579701600000,
-        // //                "priceFilter": {
-        // //                    "minPrice": "1",
-        // //                    "maxPrice": "1000000",
-        // //                    "tickSize": "1"
-        // //                },
-        // //                "lotSizeFilter": {
-        // //                    "minQty": "0.0001",
-        // //                    "maxQty": "1000000000",
-        // //                    "lotSize": "0.0001"
-        // //                },
-        // //                "commissionType": "Quote",
-        // //                "commissionReserveRate": "0.001",
-        // //                "marketOrderPriceMarkup": "0.03",
-        // //                "marginRequirements": [
-        // //                    {
-        // //                        "positionNotionalLowerBound": "0",
-        // //                        "positionNotionalUpperBound": "50000",
-        // //                        "initialMarginRate": "0.01",
-        // //                        "maintenanceMarginRate": "0.006"
-        // //                    },
-        // //                    ...
-        // //                ]
-        // //            }
-        // //        ]
-        // //    }
-        // //
-        // const productsData = this.safeValue (products, 'data', []);
-        // const productsById = this.indexBy (productsData, 'symbol');
-        // const cashData = this.safeValue (cash, 'data', []);
-        // const perpetualsData = this.safeValue (perpetuals, 'data', []);
-        // const cashAndPerpetualsData = this.arrayConcat (cashData, perpetualsData);
-        // const cashAndPerpetualsById = this.indexBy (cashAndPerpetualsData, 'symbol');
-        // const dataById = this.deepExtend (productsById, cashAndPerpetualsById);
-        // const ids = Object.keys (dataById);
-        // const result = [];
-        // for (let i = 0; i < ids.length; i++) {
-        //     const id = ids[i];
-        //     const market = dataById[id];
-        //     const settleId = this.safeValue (market, 'settlementAsset');
-        //     const settle = this.safeCurrencyCode (settleId);
-        //     const status = this.safeString (market, 'status');
-        //     const domain = this.safeString (market, 'domain');
-        //     let active = false;
-        //     if (((status === 'Normal') || (status === 'InternalTrading')) && (domain !== 'LeveragedETF')) {
-        //         active = true;
-        //     }
-        //     const spot = settle === undefined;
-        //     const swap = !spot;
-        //     const linear = swap ? true : undefined;
-        //     let minQty = this.safeNumber (market, 'minQty');
-        //     let maxQty = this.safeNumber (market, 'maxQty');
-        //     let minPrice = this.safeNumber (market, 'tickSize');
-        //     let maxPrice = undefined;
-        //     const underlying = this.safeString2 (market, 'underlying', 'symbol');
-        //     const parts = underlying.split ('/');
-        //     const baseId = this.safeString (parts, 0);
-        //     const quoteId = this.safeString (parts, 1);
-        //     const base = this.safeCurrencyCode (baseId);
-        //     const quote = this.safeCurrencyCode (quoteId);
-        //     let symbol = base + '/' + quote;
-        //     if (swap) {
-        //         const lotSizeFilter = this.safeValue (market, 'lotSizeFilter');
-        //         minQty = this.safeNumber (lotSizeFilter, 'minQty');
-        //         maxQty = this.safeNumber (lotSizeFilter, 'maxQty');
-        //         const priceFilter = this.safeValue (market, 'priceFilter');
-        //         minPrice = this.safeNumber (priceFilter, 'minPrice');
-        //         maxPrice = this.safeNumber (priceFilter, 'maxPrice');
-        //         symbol = base + '/' + quote + ':' + settle;
-        //     }
-        //     const fee = this.safeNumber (market, 'commissionReserveRate');
-        //     const marginTradable = this.safeValue (market, 'marginTradable', false);
-        //     result.push ({
-        //         'id': id,
-        //         'symbol': symbol,
-        //         'base': base,
-        //         'quote': quote,
-        //         'settle': settle,
-        //         'baseId': baseId,
-        //         'quoteId': quoteId,
-        //         'settleId': settleId,
-        //         'type': swap ? 'swap' : 'spot',
-        //         'spot': spot,
-        //         'margin': spot ? marginTradable : undefined,
-        //         'swap': swap,
-        //         'future': false,
-        //         'option': false,
-        //         'active': active,
-        //         'contract': swap,
-        //         'linear': linear,
-        //         'inverse': swap ? !linear : undefined,
-        //         'taker': fee,
-        //         'maker': fee,
-        //         'contractSize': swap ? this.parseNumber ('1') : undefined,
-        //         'expiry': undefined,
-        //         'expiryDatetime': undefined,
-        //         'strike': undefined,
-        //         'optionType': undefined,
-        //         'precision': {
-        //             'amount': this.safeNumber (market, 'lotSize'),
-        //             'price': this.safeNumber (market, 'tickSize'),
-        //         },
-        //         'limits': {
-        //             'leverage': {
-        //                 'min': undefined,
-        //                 'max': undefined,
-        //             },
-        //             'amount': {
-        //                 'min': minQty,
-        //                 'max': maxQty,
-        //             },
-        //             'price': {
-        //                 'min': minPrice,
-        //                 'max': maxPrice,
-        //             },
-        //             'cost': {
-        //                 'min': this.safeNumber (market, 'minNotional'),
-        //                 'max': this.safeNumber (market, 'maxNotional'),
-        //             },
-        //         },
-        //         'info': market,
-        //     });
-        // }
-        // return result;
+        /**
+         * @method
+         * @name ace#fetchMarkets
+         * @description retrieves data on all markets for ace
+         * @see https://github.com/ace-exchange/ace-official-api-docs/blob/master/api_v2.md#oapi-api---market-pair
+         * @param {object} params extra parameters specific to the exchange api endpoint
+         * @returns {[object]} an array of objects representing market data
+         */
+        const response = await this.publicGetOapiV2ListMarketPair ();
+        //
+        //     [
+        //         {
+        //             "symbol":"BTC/USDT",
+        //             "base":"btc",
+        //             "baseCurrencyId": "122"
+        //             "quote":"usdt",
+        //             "basePrecision":"8",
+        //             "quotePrecision":"5",
+        //             "minLimitBaseAmount":"0.1",
+        //             "maxLimitBaseAmount":"480286"
+        //         }
+        //     ]
+        //
+        const result = [];
+        for (let i = 0; i < response.length; i++) {
+            const market = response[i];
+            const base = this.safeString (market, 'base');
+            const baseCode = this.safeCurrencyCode (base);
+            const quote = this.safeString (market, 'quote');
+            const quoteCode = this.safeCurrencyCode (quote);
+            const symbol = base + '/' + quote;
+            result.push ({
+                'id': this.safeString (market, 'symbol'),
+                'uppercaseId': undefined,
+                'symbol': symbol,
+                'base': baseCode,
+                'baseId': this.safeInteger (market, 'baseCurrencyId'),
+                'quote': quoteCode,
+                'quoteId': this.safeInteger (market, 'quoteCurrencyId'),
+                'settle': undefined,
+                'settleId': undefined,
+                'type': 'spot',
+                'spot': true,
+                'margin': false,
+                'swap': false,
+                'future': false,
+                'option': false,
+                'derivative': false,
+                'contract': false,
+                'linear': undefined,
+                'inverse': undefined,
+                'contractSize': undefined,
+                'expiry': undefined,
+                'expiryDatetime': undefined,
+                'strike': undefined,
+                'optionType': undefined,
+                'limits': {
+                    'amount': {
+                        'min': this.safeNumber (market, 'minLimitBaseAmount'),
+                        'max': this.safeNumber (market, 'maxLimitBaseAmount'),
+                    },
+                    'price': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'cost': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'leverage': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                },
+                'precision': {
+                    'price': this.parseNumber (this.parsePrecision (this.safeString (market, 'quotePrecision'))),
+                    'amount': this.parseNumber (this.parsePrecision (this.safeString (market, 'basePrecision'))),
+                },
+                'active': undefined,
+                'info': market,
+            });
+        }
+        return result;
+    }
+
+    sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        let url = '/' + this.implodeParams (path, params);
+        const query = this.omit (params, this.extractParams (path));
+        if (headers === undefined) {
+            headers = {};
+        }
+        if (api === 'private') {
+            this.checkRequiredCredentials ();
+            const nonce = this.milliseconds ();
+            let auth = 'ACE_SIGN' + this.secret;
+            const data = this.extend ({
+                'apiKey': this.apiKey,
+                'timeStamp': nonce,
+            }, params);
+            const dataKeys = Object.keys (data);
+            const sortedDataKeys = this.sortBy (dataKeys, 0);
+            for (let i = 0; i < sortedDataKeys.length; i++) {
+                const key = sortedDataKeys[i];
+                auth += this.safeString (data, key);
+            }
+            const signature = this.hash (this.encode (auth), sha256, 'hex');
+            data['signKey'] = signature;
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            };
+            if (method === 'POST') {
+                const brokerId = this.safeString (this.options, 'brokerId');
+                if (brokerId !== undefined) {
+                    headers['Referer'] = brokerId;
+                }
+            }
+            body = this.urlencode (data);
+        } else if (api === 'public' && method === 'GET') {
+            if (Object.keys (query).length) {
+                url += '?' + this.urlencode (query);
+            }
+        }
+        url = this.urls['api'][api] + url;
+        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+
+    handleErrors (code, reason, url, method, headers, body, response, requestHeaders, requestBody) {
+        if (response === undefined) {
+            return undefined; // fallback to the default error handler
+        }
+        const feedback = this.id + ' ' + body;
+        const status = this.safeNumber (response, 'status', 200);
+        if (status > 200) {
+            this.throwExactlyMatchedException (this.exceptions['exact'], status, feedback);
+            this.throwBroadlyMatchedException (this.exceptions['broad'], status, feedback);
+        }
         return undefined;
     }
 }
